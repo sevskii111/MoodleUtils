@@ -6,6 +6,7 @@
 // @author       Willsr71
 // @updateURL    https://github.com/Willsr71/MoodleUtils/raw/master/moodleutils.user.js
 // @match        http://www.latintutorial.com/moodle/*
+// @grant        none
 // ==/UserScript==
 
 var developmentMode = false;
