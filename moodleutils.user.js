@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Moodle Utils
 // @namespace    http://willsr71.net
-// @version      0.2
+// @version      0.21
 // @description  Provides a number of cheats for Moodle
 // @author       Willsr71
 // @updateURL    https://github.com/Willsr71/MoodleUtils/raw/master/moodleutils.user.js
@@ -13,7 +13,7 @@
 var configuration = {
 	devMode: false,
 	showPanel: true,
-	showConsole: false,
+	showConsole: true,
 	showButtons: true
 };
 
