@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Moodle Utils
 // @namespace    http://willsr71.net
-// @version      0.21
+// @version      0.3
 // @description  Provides a number of cheats for Moodle
 // @author       Willsr71
 // @updateURL    https://github.com/Willsr71/MoodleUtils/raw/master/moodleutils.user.js
@@ -14,7 +14,8 @@ var configuration = {
 	devMode: false,
 	showPanel: true,
 	showConsole: true,
-	showButtons: true
+	showButtons: true,
+	version: "0.3"
 };
 
 window.localStorage.setItem("moodleutils_config", JSON.stringify(configuration));
