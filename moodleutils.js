@@ -1,498 +1,469 @@
-var Option = {
-	OptionsExpanded: false,
-	TypeHeaders: true,
-	ToolTips: true,
-	Lang: "both",
-	Chap: "all",
-	Save: true,
-	Debug: false
+var databaselist = ["vocab"];
+var databases = {};
+var failedDatabaseCount = 0;
+var shouldLoad = false;
+var loadedDate = Date.now();
+var updaterVersion;
+var configoptions = ["devMode", "showPanel", "showConsole", "showButtons", "version"];
+var configuration = {
+	devMode: false,
+	showPanel: true,
+	showConsole: true,
+	showButtons: true,
+	version: "0.0"
 };
-var counter = {
-	Nouns: 0,
-	Pronouns: 0,
-	Adjectives: 0,
-	Verbs: 0,
-	Adverbs: 0,
-	Prepositions: 0,
-	Conjunctions: 0,
-	EncliticParticles: 0
+
+function main() {
+	readConfig();
+	initialize();
+	createUpdater();
+	log("Loading MoodleUtils v" + configuration.version + "...");
+
+	if (document.location.pathname == "/moodle/mod/quiz/attempt.php") {
+		addButton("Fill Answers", autoFill);
+		shouldLoad = true;
+	} else if (document.location.pathname == "/moodle/mod/quiz/review.php") {
+		addButton("Record Answers", autoRecord);
+		shouldLoad = true;
+	}
+
+	if (shouldLoad) {
+		addButton("Clear Answers", autoClear);
+
+		addDatabases();
+	}
+	
+	addButton("Hide Panel", hidePanel);
+	
+	checkLoaded();
+}
+
+Object.size = function(obj) {
+	var size = 0
+	for (var key in obj) {
+			if (obj.hasOwnProperty(key)) size = size + 1;
+	}
+	return size;
 };
-var version = 131;
-var chMax = 11;
-var x;
-var word;
-var noallow = [];
-var wselected = [];
-var expanded = [];
-var words = [];
-var endings = [];
-var changelog;
-var newVersion;
-var oldVer;
+
 function l(e) {
 	return document.getElementById(e);
 }
 
-String.prototype.isEmpty = function() {
-	if(this === '') {
-		return true;
-	} else {
+function log(what) {
+	console.info(what);
+	var line = '<a style="color:#000000;text-decoration:none">[' + parseTime(Date.now() - loadedDate) + '] ' + what + '</a><br>';
+	l("moodleutils_logger").innerHTML = l("moodleutils_logger").innerHTML + line;
+}
+
+function parseTime(time) {
+	var string;
+	
+	string = (time % 60);
+	string = (Math.floor(time / 60) % 60 + "." + string);
+	string = Math.floor(time / (60 * 60)) + ":" + string;
+	
+	return string;
+}
+
+function checkForUpdates() {
+	if (updaterVersion === null || updaterVersion === undefined) {
 		return false;
 	}
-};
-
-function getCookie(name) {
-	var parts = document.cookie.split(name + "=");
-	if(parts.length === 2) {
-		return parts.pop().split(";").shift();
-	}
-}
-
-function createarray(y,w) {
-	var out = "";
-	var t = "";
-	w = w.split("|");
-	for(x = 0; x < w.length; x++) {
-		t = w[x].split("=");
-		out += '{type:"' + y + '"/lat:"' + t[0] + '",eng:"' + t[1] + '"},\n';
-		//out += "{type:\"" + y + "\",lat:\"" + t[0] + "\",eng:\"" + t[1] + "\"},\n";
-	}
-	return out;
-}
-
-window.onload = function() {
-	initChs();
-	if (Option.Save) {
-		loadCookie();
-	}
-	initWords();
-	initEndings();
 	
-	l("optionsButton").onclick = function() {
-		showOptions()
+	var versionNum = parseInt(configuration.version.split(".").join(""));
+	var updaterVersionNum = parseInt(updaterVersion.version.split(".").join(""));
+	var updateAvaliable = updaterVersionNum > versionNum;
+	
+	if (updateAvaliable) {
+		log("</a><a style=\"color:red\">Update avaliable: " + updaterVersion.version + "</a><a href=\"" + document.location.protocol + "//github.com/Willsr71/MoodleUtils/raw/master/moodleutils.user.js\">[link]");
+		log("Changelog: " + updaterVersion.changelog);
+		//var win = window.open(document.location.protocol + "//github.com/Willsr71/MoodleUtils/raw/master/moodleutils.user.js");
+	} else {
+		log("No updates avaliable")
+	}
+	
+	return updateAvaliable;
+}
+
+function createUpdater() {
+	var updater = document.createElement("script");
+	updater.src = document.location.protocol + "//willsr71.net/scripts/version.php?script=moodleutils&lang=javascript";
+	updater.onload = function() {
+		checkForUpdates();
 	};
+	(document.body || document.head || document.documentElement).appendChild(updater);
+}
+
+function readConfig() {
+	var newconfig = JSON.parse(window.localStorage.getItem("moodleutils_config"));
 	
-	find();
-	sendUpdateRequest();
-	removeAlert();
-};
+	if (newconfig === null) {
+		newconfig = configuration;
+	}
+	
+	for (var x = 0; x < configoptions.length; x = x + 1) {
+		if (newconfig[configoptions[x]] === undefined) {
+			continue;
+		}
+		
+		configuration[configoptions[x]] = newconfig[configoptions[x]];
+	}
+}
 
-function removeAlert() {
-	l("removeByJs").innerHTML = "";
+function initialize() {
+	var container = document.createElement("div");
+	var buttons = document.createElement("div");
+	var logger = document.createElement("div");
+	
+	container.id = "moodleutils_panel";
+	buttons.id = "moodleutils_buttons";
+	logger.id = "moodleutils_logger";
+	
+	if (!configuration.showPanel) {
+		container.style.display = "none";
+	}
+	
+	if (!configuration.showButtons) {
+		buttons.style.display = "none";
+	}
+	
+	if (!configuration.showConsole) {
+		logger.style.display = "none";
+	}
+	
+	container.appendChild(buttons);
+	container.appendChild(logger);
+	
+	(l("mod_quiz_navblock") || l("inst64") || l("inst4")).appendChild(container);
 }
 
-function sendUpdateRequest() {
-	ajax('version.txt?', getUpdateRequest);
+function hidePanel() {
+	l("moodleutils_panel").style.display = "none";
 }
 
-function getUpdateRequest(response, auto) {
-	response = response.split("|");
-	newVersion = parseInt(response[0]);
-	changelog = response[1].split(";");
-	console.log("[UPDATE] Old=" + oldVer + " Curr=" + version + " New=" + newVersion);
-	if (newVersion > version){
-		console.log("[UPDATE] New version avaliable");
-		var msg="New version avaliable: v"+newVersion;
-		msg+="\nRefresh to get it.";
-		msg+="\n\nChangelog:";
-		for(x=0;x<changelog.length;x++){
-			msg+="\n"+changelog[x];
-		}
-		alert(msg);
-	}else if(oldVer<version){
-		console.log("[UPDATE] Updated to new version");
-		var msg="Updated to v"+version+"!";
-		msg+="\n\nChangelog:";
-		for(x=0;x<changelog.length;x++){
-			msg+="\n"+changelog[x];
-		}
-		alert(msg);
-	}else{
-		console.log("[UPDATE] No new version information avaliable");
+function addButton(name, onclick) {	
+	var button = document.createElement("input");
+	button.setAttribute("type", "button");
+	button.setAttribute("value", name);
+	button.addEventListener("click", onclick);
+	
+	l("moodleutils_buttons").appendChild(button);
+}
+
+function checkLoaded() {
+	if (!shouldLoad || databaselist.length - failedDatabaseCount == Object.size(databases)) {
+		log("Loaded " + getData().length + " terms from localstorage");
+		log("Loaded " + appendDatabases(getData()).length + " terms from " + (Object.size(databases) + 1) + " databases");
+		log("Done.");
+	} else {
+		log("Waiting on " + (databaselist.length - failedDatabaseCount - Object.size(databases)) + " databases...");
 	}
 }
-function initChs(){
-	var html='';
-	for(x=1;x<=chMax;x++){
-		html+='<option value="'+x+'">Ch '+x+'</option>';
-	}
-	l("chapSelect").innerHTML+=html;
-	l("bnoun").onclick=function(){buttonflip(this)};
-	l("bpron").onclick=function(){buttonflip(this)};
-	l("badje").onclick=function(){buttonflip(this)};
-	l("bverb").onclick=function(){buttonflip(this)};
-	l("badve").onclick=function(){buttonflip(this)};
-	l("bprep").onclick=function(){buttonflip(this)};
-	l("bconj").onclick=function(){buttonflip(this)};
-	l("bencl").onclick=function(){buttonflip(this)};
+
+function addDatabase(name) {
+	var script = document.createElement("script");
+	script.src = document.location.protocol + "//willsr71.net/scripts/moodle/databases/" + name + ".js";
+	script.onload = function() {
+		log("Loaded " + databases[name].length + " terms from " + name);
+		checkLoaded();
+	};
+	script.onerror = function() {
+		log("Error loading database " + name);
+		failedDatabaseCount = failedDatabaseCount + 1;
+		checkLoaded();
+	};
+	(document.body || document.head || document.documentElement).appendChild(script);
 }
-function showOptions(){
-	l("optionsButton").innerHTML="Options \u25B2";
-	l("optionsButton").onclick=function(){hideOptions()};
-	l("topPadding").style.paddingTop="90px";
-	l("options").style.display="block";
-	Option.OptionsExpanded=true;
-	saveCookie();
-}
-function hideOptions(){
-	l("optionsButton").innerHTML="Options \u25BC";
-	l("optionsButton").onclick=function(){showOptions()};
-	l("topPadding").style.paddingTop="65px";
-	l("options").style.display="none";
-	Option.OptionsExpanded=false;
-	saveCookie();
-}
-function updateOptions(){
-	Option.TypeHeaders=l("optionTypeHeaders").title=="true";
-	Option.ToolTips=l("optionToolTips").title=="true";
-	find();
-}
-function resetOptions(){
-	Option.OptionsExpanded=false;
-	Option.TypeHeaders=true;
-	Option.ToolTips=true;
-	Option.Lang="both";
-	Option.Chap="all";
-	Option.Save=true;
-	l("word").value="";
-	noallow=[];
-	expanded=[];
-	if(l("bnoun").title=="false"){l("bnoun").title=true;buttonStyleFlip("bnoun");}
-	if(l("bpron").title=="false"){l("bpron").title=true;buttonStyleFlip("bpron");}
-	if(l("badje").title=="false"){l("badje").title=true;buttonStyleFlip("badje");}
-	if(l("bverb").title=="false"){l("bverb").title=true;buttonStyleFlip("bverb");}
-	if(l("badve").title=="false"){l("badve").title=true;buttonStyleFlip("badve");}
-	if(l("bprep").title=="false"){l("bprep").title=true;buttonStyleFlip("bprep");}
-	if(l("bconj").title=="false"){l("bconj").title=true;buttonStyleFlip("bconj");}
-	if(l("bencl").title=="false"){l("bencl").title=true;buttonStyleFlip("bencl");}
-	find();
-	loadCookie("LatinSave=v"+version+"|*|both|all|false|true|true|*|*|END;");
-}
-function buttonflip(b){
-	if(b.title=="true"){
-		b.title=false;
-		b.style.backgroundColor="red";
-	}else{
-		b.title=true;
-		b.style.backgroundColor="green";
-	}
-	find();
-}
-function buttonFlipV(b){var c;
-	if(b.id=="optionTypeHeaders") c=Option.TypeHeaders;
-	else if(b.id=="optionToolTips") c=Option.ToolTips;
-	if(c){
-		c=false;
-		b.innerHTML="OFF (Turn On)";
-	}else{
-		c=true;
-		b.innerHTML="ON (Turn Off)";
-	}
-	if(b.id=="optionTypeHeaders") Option.TypeHeaders=c;
-	else if(b.id=="optionToolTips") Option.ToolTips=c;
-	find();
-}
-function buttonStyleFlip(b){
-	b=l(b);
-	if(b.title=="true") b.style.backgroundColor="green";
-	else b.style.backgroundColor="red";
-}
-function compress(what,me){
-	if(me===true){
-		l(what.id).style.display="none";
-		if(Option.ToolTips){l("w"+(what.id.split("e")[1])).title="Click to expand";}
-		l("w"+(what.id.split("e")[1])).onclick=function(){expand(this)};
-		expanded.splice(expanded.indexOf(l("wlat"+(what.id.split("e")[1])).innerHTML),1);
-	}else{
-		l("e"+(what.id.split("w")[1])).style.display="none";
-		if(Option.ToolTips){l(what.id).title="Click to expand";}
-		l(what.id).onclick=function(){expand(this)};
-		expanded.splice(expanded.indexOf(l("wlat"+(what.id.split("w")[1])).innerHTML),1);
-	}
-	saveCookie();
-}
-function compressAll(){
-	expanded=[];
-	find();
-}
-function expand(what){
-	l("e"+(what.id.split("w")[1])).style.display="table-row";
-	if(Option.ToolTips){l(what.id).title="Click to compress";}
-	l(what.id).onclick=function(){compress(this, false)};
-	expanded.push(l("wlat"+(what.id.split("w")[1])).innerHTML);
-	saveCookie();
-}
-function checkChapter(chap){
-	if(chap.indexOf(",")!=-1){
-		chap=chap.split(", ");
-		for(y=0;y<chap.length;y++){
-			if(chap[y]==Option.Chap) return true;
-		}
-	}else{
-		if(chap==Option.Chap) return true;
-		else return false;
+
+function addDatabases() {
+	for (var x = 0; x < databaselist.length; x = x + 1) {
+		addDatabase(databaselist[x]);
 	}
 }
-function checkForMatch(word,type,lat,eng){
-	var latR=false;
-	var engR=false;
-	if(noallow.indexOf(type)!==-1) return false;
-	if(lat.toLowerCase().indexOf(word)!==-1) latR=true;
-	if(eng.toLowerCase().indexOf(word)!==-1) engR=true;
-	if(Option.Lang=="both") if(latR||engR) return true;
-	else if(Option.Lang=="latin"&&latR) return true;
-	else if(Option.Lang=="english"&&engR) return true;
-	else return false;
+
+function appendDatabase(database, data) {
+	if (database === undefined) {
+		return data;
+	}
+	
+	for (var x = 0; x < database.length; x = x + 1) {
+		data.push(database[x]);
+	}
+	return data;
 }
-function find(){
-	word=(l("word").value).trim().toLowerCase();
-	wselected=[];
-	noallow=[];
-	Option.Lang=l("langSelect").value;
-	Option.Chap=l("chapSelect").value;
-	if(l("bnoun").title=="false") noallow.push("Noun");
-	if(l("bpron").title=="false") noallow.push("Pronoun");
-	if(l("badje").title=="false") noallow.push("Adjective");
-	if(l("bverb").title=="false") noallow.push("Verb");
-	if(l("badve").title=="false") noallow.push("Adverb");
-	if(l("bprep").title=="false") noallow.push("Preposition");
-	if(l("bconj").title=="false") noallow.push("Conjunction");
-	if(l("bencl").title=="false") noallow.push("Enclitic Particle");
-	if(Option.Chap=="all"){
-		for(x=0;x<words.length;x++){
-			if(checkForMatch(word,words[x].type,words[x].lat,words[x].eng)) wselected.push(words[x]);
-		}
-	}else{
-		for(x=0;x<words.length;x++){
-			if(checkForMatch(word,words[x].type,words[x].lat,words[x].eng)&&checkChapter(words[x].ch)) wselected.push(words[x]);
+
+function appendDatabases(data) {
+	for (var x = 0; x < databaselist.length; x = x + 1) {
+		data = appendDatabase(databases[databaselist[x]], data);
+	}
+	
+	return data;
+}
+
+function getData() {
+	var data = JSON.parse(window.localStorage.getItem("moodleutils_local_database"));
+	if (data === null || data === undefined) {
+		setData([]);
+		data = getData();
+	}
+	return data;
+}
+
+function setData(data) {
+	window.localStorage.setItem("moodleutils_local_database", JSON.stringify(data));
+}
+
+function prettifyAnswer(answer) {
+	answer = answer.split("ā").join("a");
+	answer = answer.split("ē").join("e");
+	answer = answer.split("ī").join("i");
+	answer = answer.split("ō").join("o");
+	answer = answer.split("ū").join("u");
+	
+	return answer;
+}
+
+function setValue(answerbox, answer) {
+	if (answer === undefined || answer === "") {
+		return 0;
+	}
+
+	answerbox.setAttribute("value", answer);
+	return 1;
+}
+
+function setSelected(answerbox, answer) {
+	if (answer === undefined || answer === "") {
+		return 0;
+	}
+	
+	for (var x = 0; x < answerbox.options.length; x = x + 1) {
+		if (answerbox.options[x].innerHTML == answer) {
+			answerbox.selectedIndex = x;
+			return 1;
 		}
 	}
-	renderwords();
-	if(Option.Save) saveCookie();
-	return wselected;
+	return 0;
 }
-function renderwords(){var tr;var td;var latin;var english;var info;
-	var completed=[];
-	for(x=0;x<noallow.length;x++){
-		completed.push(noallow[x]);
+
+function parseAnswer(correcttext, questions, question){
+	var qpos = correcttext.indexOf(question);
+	var qposnext = correcttext.length;
+	var answer;
+	
+	for (var x = 0; x < questions.length; x = x + 1) {
+		var len = correcttext.indexOf(questions[x]);
+		
+		if (len <= qpos) {
+			continue;
+		}
+		
+		qposnext = Math.min(qposnext, len);
 	}
-	var HTML="";
-	for(x=0;x<wselected.length;x++){
-		if(completed.indexOf(wselected[x].type)===-1){
-			completed.push(wselected[x].type);
-			if(Option.TypeHeaders){
-				HTML+='<tr class="table-title"><td style="font-size:20px;padding-left:30px">'+wselected[x].type+'s</td><td></td></tr>';
+	
+	answer = correcttext.substring(qpos, qposnext);
+	answer = answer.replace(question + " – ", "");
+	if (answer.indexOf(", ") !== -1) {
+		answer = answer.substring(0, answer.lastIndexOf(", "));
+	}
+	
+	return answer;
+}
+
+function isPairSet(data, question) {
+	for (var x = 0; x < data.length; x = x + 1) {
+		if (data[x].q == question) {
+			return true;
+		}
+	}
+	return false;
+}
+
+function addPair(question, answer) {
+	var data = getData();
+	var pair = {q:question,a:answer};
+	
+	if(!isPairSet(appendDatabases(getData()), question)){
+		console.info("Pushing pair " + question + " = " + answer);
+		data.push(pair);
+		setData(data);
+		return 1;
+	}
+	return 0;
+}
+
+function getPair(question) {
+	var data = appendDatabases(getData());
+	for (var x = 0; x < data.length; x = x + 1) {
+		if (data[x].q == question) {
+			return data[x].a;
+		}
+	}
+	return "";
+}
+
+function autoFill() {
+	var count = 0;
+	var totalcount = 0;
+	var n = 0;
+	while (true) {
+		n = n + 1;
+		var q = l("q" + n);
+		
+		if (q === null) {
+			break;
+		}
+		
+		if (q.classList.contains("informationitem")) {
+			continue;
+		}
+		
+		var contentnode = q.childNodes[1];
+		var questionnode;
+		var answernode;
+		var question;
+		var answerbox;
+		var answer;
+		
+		if (q.classList.contains("shortanswer")) {
+			question = contentnode.getElementsByClassName("qtext")[0].innerHTML;
+			answerbox = contentnode.getElementsByClassName("answer")[0];
+			answer = prettifyAnswer(getPair(question));
+			count = count + setValue(answerbox.childNodes[0], answer);
+			totalcount = totalcount + 1;
+		} else if (q.classList.contains("multichoice")) {
+			question = contentnode.getElementsByClassName("qtext")[0].innerHTML;
+			answernode = contentnode.childNodes[0].getElementsByClassName("answer")[0];
+			
+			answer = getPair(question);
+			
+			var suba = answernode.firstChild;
+			var subn = 0;
+			while (true) {
+				if (suba === null) {
+					break;
+				}
+				
+				if (suba.nodeName == "#text") {
+					suba = suba.nextSibling;
+					continue;
+				}
+				
+				var subo = suba.childNodes[1].innerHTML;
+				if (subo.indexOf(". ") == 1) {
+					subo = subo.substr(3, subo.length);
+				}
+				
+				if (subo == answer) {
+					suba.childNodes[0].checked = "checked";
+					count = count + 1;
+				}
+				
+				subn = subn + 1;
+				suba = suba.nextSibling;
+			}
+			totalcount = totalcount + 1;
+		} else if (q.classList.contains("randomsamatch")) {
+			questionnode = contentnode.childNodes[0].getElementsByClassName("answer")[0];
+			
+			var subq = questionnode.firstChild.firstChild;
+			var subn = 0;
+			while (true) {
+				if (subq === null) {
+					break;
+				}
+				
+				question = subq.getElementsByClassName("text")[0].innerHTML;
+				answerbox = subq.getElementsByClassName("select")[0];
+				answer = getPair(question);
+				count = count + setSelected(answerbox, answer);
+				totalcount = totalcount + 1;
+				
+				subn = subn + 1;
+				subq = subq.nextSibling;
 			}
 		}
-		tr='<tr id="w'+x+'"';
-		if(Option.ToolTips){tr+=' title="Click to expand"';}
-		if((x%2)===0){tr+=' class="table-other"';}
-		tr+='>';
-		latin='<td class="tablepadding" id="wlat'+x+'">'+wselected[x].lat+'</td>';
-		english='<td class="tablepadding">'+wselected[x].eng+'</td>';
-		HTML+=tr+latin+english+'</tr>';
+	}
+	
+	log("Filled " + count + " answers out of " + totalcount + " on the page");
+}
 
-		tr='<tr id="e'+x+'"';
-		if(Option.ToolTips){tr+=' title="Click to compress"';}
-		if(expanded.indexOf(wselected[x].lat)===-1){tr+=' style="display:none"';}
-		if((x%2)===0){tr+=' class="table-other"';}
-		tr+='>';
-		td='<td class="tablepadding"';
-		if(endify(wselected[x].lat,wselected[x].type,wselected[x].decl,wselected[x].conj)==''){td+=' colspan="2"';}
-		info=td+'>';
-		info+='<b>Type:</b> '+wselected[x].type;
-		info+='<br /><b>Chapter:</b> '+wselected[x].ch;
-		if(wselected[x].type=="Noun"&&wselected[x].decl.isEmpty()){info+='<br /><b>Declension:</b> '+wselected[x].decl;}
-		else if(wselected[x].type=="Verb"&&wselected[x].conj.isEmpty()){info+='<br /><b>Conjugation:</b> '+wselected[x].conj;}
-		if(wselected[x].derv.isEmpty()) info+='<br /><b>Derivitives:</b> '+wselected[x].derv;
-		info+='</td>';
+function autoRecord() {
+	var count = 0;
+	var totalcount = 0;
+	var n = 0;
+	while (true) {
+		n = n + 1;
+		var q = l("q" + n);
 		
-		info+=endify(wselected[x].lat,wselected[x].type,wselected[x].decl,wselected[x].conj);
+		if (q === null) {
+			break;
+		}
 		
-		HTML+=tr+info+'</tr>';
-	}
-	l("table").innerHTML='<tr style="text-align:center;cursor:auto"><td>Latin</td><td>English</td></tr>'+HTML;
-	for(x=0;x<wselected.length;x++){
-		l("w"+x).onclick=function(){expand(this)};
-		l("e"+x).onclick=function(){compress(this, true)};
-	}
-	if(wselected.length===0){
-		l("results").innerHTML='<a style="color:red">No results</a>';
-	}else if(wselected.length!==1){
-		l("results").innerHTML=wselected.length+" results";
-	}else{
-		l("results").innerHTML="1 result";
-	}
-}
-
-function endify(what,type,decl,conj){
-	pre='<td class="tablepadding"><table border="0" style="width:initial"><tbody>';
-	post='</tbody></table></td>';
-	if(type=="Noun"){
-		return pre+endifyNoun(what,decl)+post;
-	}else if(type=="Verb"){
-		return pre+endifyVerb(what,conj)+post;
-	}else{
-		return '';
-	}
-}
-
-function endifyNoun(what,decl){var f='';
-	var stem=(what).split(",")[0];
-	var word=what.split(",")[0];
-	if(decl=="First"){
-		stem=stem.slice(0,stem.length-1);
-		declension.curr=declension.first;
-	}else if(decl=="Second M"){
-		stem=stem.slice(0,stem.length-2);
-		declension.curr=declension.secondM;
-	}else if(decl=="Second N"){
-		stem=stem.slice(0,stem.length-2);
-		declension.curr=declension.secondN;
-	}else if(decl=="Third"){
-		stem=stem.slice(0,stem.length-2);
-		declension.curr=declension.thirdM;
-		console.log("[ENDIFIER] [ThirdM] "+what+" | "+word.slice(word.length-2,word.length));
-		declension.curr[0]=word.slice(word.length-2,word.length);
-	}else if(decl=="Third F"){
-		stem=stem.slice(0,stem.length-2);
-		declension.curr=declension.thirdF;
-		console.log("[ENDIFIER] [ThirdF] "+what+" | "+word.slice(word.length-2,word.length));
-	}else if(decl=="Third N"){
-		stem=stem.slice(0,stem.length-2);
-		declension.curr=declension.thirdN;
-		console.log("[ENDIFIER] [ThirdN] "+what+" | "+word.slice(word.length-2,word.length));
-	}else{
-		declension.curr=["","","","","","","","","",""];
-	}
-	f+='<tr><td><b>Nominitive</b></td><td>'+(stem+declension.curr[0])+'</td><td>'+(stem+declension.curr[5])+'</td></tr>';
-	f+='<tr><td><b>Genative</b></td><td>'+(stem+declension.curr[1])+'</td><td>'+(stem+declension.curr[6])+'</td></tr>';
-	f+='<tr><td><b>Dative</b></td><td>'+(stem+declension.curr[2])+'</td><td>'+(stem+declension.curr[7])+'</td></tr>';
-	f+='<tr><td><b>Accusative</b></td><td>'+(stem+declension.curr[3])+'</td><td>'+(stem+declension.curr[8])+'</td></tr>';
-	f+='<tr><td><b>Ablative</b></td><td>'+(stem+declension.curr[4])+'</td><td>'+(stem+declension.curr[9])+'</td></tr>';
-	return f;
-}
-function endifyVerb(what,conj){var f='';
-	return f;
-}
-
-function buildNormal(x){/*console.log("buildNormal [ "+x+" ]");*/if(x==="") return "*"; else return x;}
-function buildArray(x){/*console.log("buildArray [ "+x+" ]");*/if(x.length===0) return "*"; else return x.join(":");}
-function buildInt(x){/*console.log("buildInt [ "+x+" ]");*/if(x.isNaN===true) return "*"; else return x.toString();}
-function getNormal(x){/*console.log("getNormal [ "+x+" ]");*/if(x=="*") return ""; else return x;}
-function getArray(x){/*console.log("getArray [ "+x+" ]");*/if(x=="*") return []; else return x.split(":");}
-function getBool(x){/*console.log("getBool [ "+x+" ]");*/if(x=="true"||x===true) return true; else return false;}
-function getInt(x){/*console.log(getInt [ "+x+" ]");*/if(x=="*") return 0; else return parseInt(x);}
-function saveCookie(){
-	var str="LatinSave";
-	var build="v"+buildInt(version)+"|";//str[0]
-	var expires="Fri, 31 Dec 9999 23:59:59 GMT";
-	var path="/";
-	build+=""+buildNormal(word);//str[1]
-	build+="|"+Option.Lang;//str[2]
-	build+="|"+Option.Chap;//str[3]
-	build+="|"+Option.OptionsExpanded;//str[4]
-	build+="|"+Option.TypeHeaders;//str[5]
-	build+="|"+Option.ToolTips;//str[6]
-	build+="|"+buildArray(noallow);//str[7]
-	build+="|"+buildArray(expanded);//str[8]
-	build+="|END";//str[9]
-	str+="="+build+"; ";
-	str+="expires="+expires+"; ";
-	str+="path="+path;
-	document.cookie=str;
-	console.log("[BUILDER] "+build);
-	return str;
-}
-function loadCookie(str){var temp;
-	if(str===undefined){
-		str=getCookie("LatinSave");
-		if(str===undefined) return false;
-	}else{
-		str=str.split(";")[0];
-		str=str.split("=")[1];
-	}
-	str=str.split("|");
-	str.pop();
-	console.log("[LOADER] "+str);
-	if(Option.Debug===true){
-		for(var y=0;y<str.length;y++){
-			console.log("[LOADER "+y+"] "+str[y]);
+		if (q.classList.contains("informationitem")) {
+			continue;
 		}
-	}
-	oldVer=getInt(str[0].slice(1,str[0].length));
-	extractData("all",str);
-	loadUrl();
-	return true;
-}
-function loadUrl(){var t;
-	var u=window.location.search;
-	console.log("[URL] "+u);
-	if(u.indexOf("?")!==-1){
-		console.log("[URL] LOADING FROM URL");
-		u=u.slice(1,u.length);
-		u=u.split("&");
-		for(x=0;x<u.length;x++){
-			u[x]=u[x].split("=");
-			console.log(u[x]);
-			var v1=u[x][0];
-			var v2=u[x][1];
-			extractData(v1,v2);
-		}
-		find();
-	}else{
-		console.log("[URL] NO URL AVALIABLE");
-	}
-}
-function extractData(what, str){
-	console.log("[EXTRACTOR] "+what+" = "+str);
-	if(what=="all"){
-		word=getNormal(str[1]);
-		Option.Lang=str[2];
-		Option.Chap=str[3];
-		Option.OptionsExpanded=getBool(str[4]);
-		Option.TypeHeaders=getBool(str[5]);
-		Option.ToolTips=getBool(str[6]);
-		noallow=getArray(str[7]);
-		expanded=getArray(str[8]);
-		l("word").value=word;
-		l("langSelect").value=Option.Lang;
-		l("chapSelect").value=Option.Chap;
-		if(Option.OptionsExpanded) showOptions();
-		else if(!Option.OptionsExpanded) hideOptions();
-		if(!Option.TypeHeaders) l("optionTypeHeaders").innerHTML="OFF (Turn On)";
-		if(!Option.ToolTips) l("optionToolTips").innerHTML="OFF (Turn On)";
-		if(noallow.indexOf("Noun")!==-1){l("bnoun").title=false;buttonStyleFlip("bnoun");}
-		if(noallow.indexOf("Pronoun")!==-1){l("bpron").title=false;buttonStyleFlip("bpron");}
-		if(noallow.indexOf("Adjective")!==-1){l("badje").title=false;buttonStyleFlip("badje");}
-		if(noallow.indexOf("Verb")!==-1){l("bverb").title=false;buttonStyleFlip("bverb");}
-		if(noallow.indexOf("Adverb")!==-1){l("badve").title=false;buttonStyleFlip("badve");}
-		if(noallow.indexOf("Preposition")!==-1){l("bprep").title=false;buttonStyleFlip("bprep");}
-		if(noallow.indexOf("Conjunction")!==-1){l("bconj").title=false;buttonStyleFlip("bconj");}
-		if(noallow.indexOf("Enclitic Particle")!==-1){l("bencl").title=false;buttonStyleFlip("bencl");}
-	}else{
-		if(what=="word"){word=str;l("word").value=word;}
-		else if(what=="lang"){Option.Lang=str;l("langSelect").value=Option.Lang;}
-		else if(what=="chap"){Option.Chap=str;l("chapSelect").value=Option.Chap;}
-		else if(what=="optionsExpanded"){Option.OptionsExpanded=getBool(str);if(Option.OptionsExpanded) showOptions(); else if(!Option.OptionsExpanded) hideOptions();}
-		else if(what=="typeHeaders"){Option.TypeHeaders=getBool(str);if(!Option.TypeHeaders) l("optionTypeHeaders").innerHTML="OFF (Turn On)";}
-		else if(what=="toolTips"){Option.ToolTips=getBool(str);if(!Option.ToolTips) l("optionToolTips").innerHTML="OFF (Turn On)";}
-		else if(what=="noallow"){
-			noallow=getArray(str);
-			if(noallow.indexOf("Noun")!==-1){l("bnoun").title=false;buttonStyleFlip("bnoun");}
-			if(noallow.indexOf("Pronoun")!==-1){l("bpron").title=false;buttonStyleFlip("bpron");}
-			if(noallow.indexOf("Adjective")!==-1){l("badje").title=false;buttonStyleFlip("badje");}
-			if(noallow.indexOf("Verb")!==-1){l("bverb").title=false;buttonStyleFlip("bverb");}
-			if(noallow.indexOf("Adverb")!==-1){l("badve").title=false;buttonStyleFlip("badve");}
-			if(noallow.indexOf("Preposition")!==-1){l("bprep").title=false;buttonStyleFlip("bprep");}
-			if(noallow.indexOf("Conjunction")!==-1){l("bconj").title=false;buttonStyleFlip("bconj");}
-			if(noallow.indexOf("Enclitic Particle")!==-1){l("bencl").title=false;buttonStyleFlip("bencl");}
-		}
-		else if(what=="expanded"){
-			for(x=0;x<str.length;x++){
-				str=str.replace("%s"," ");
+		
+		var contentnode = q.childNodes[1];
+		var question;
+		var answer;
+		
+		if (q.classList.contains("shortanswer")) {
+			question = contentnode.childNodes[0].getElementsByClassName("qtext")[0].innerHTML;
+			answer = contentnode.childNodes[1].getElementsByClassName("rightanswer")[0].innerHTML.replace("The correct answer is: ", "");
+			count = count + addPair(question, answer);
+			totalcount = totalcount + 1;
+		} else if (q.classList.contains("multichoice")) {
+			question = contentnode.childNodes[0].getElementsByClassName("qtext")[0].innerHTML;
+			answer = contentnode.childNodes[1].getElementsByClassName("rightanswer")[0].innerHTML.replace("The correct answer is: ", "");
+			count = count + addPair(question, answer);
+			totalcount = totalcount + 1;
+		} else if (q.classList.contains("randomsamatch")) {
+			var correcttext = contentnode.childNodes[1].getElementsByClassName("rightanswer")[0].innerHTML.replace("The correct answer is: ", "");
+			var questionnode = contentnode.childNodes[0].getElementsByClassName("answer")[0];
+			var questions = [];
+			
+			var subq = questionnode.firstChild.firstChild;
+			var subn = 0;
+			while (true) {			
+				if (subq === null) {
+					break;
+				}
+				
+				questions[subn] = subq.getElementsByClassName("text")[0].innerHTML;
+				
+				subn = subn + 1;
+				subq = subq.nextSibling;
 			}
-			expanded=getArray(str);
+			
+			for (var x = 0; x < questions.length; x = x + 1) {
+				answer = parseAnswer(correcttext, questions, questions[x]);
+				
+				if (answer !== "") {
+					count = count + addPair(questions[x], answer);
+				}
+				
+				totalcount = totalcount + 1;
+			}
 		}
 	}
+	
+	log("Added " + count + " new answers out of " + totalcount + " on the page");
 }
+
+function autoClear() {
+	var data = getData();
+	var confirmmsg = "Are you sure you want to clear " + data.length + " answers?";
+	var confirmed = confirm(confirmmsg);
+	log(confirmmsg);
+	log(confirmed);
+	
+	if (confirmed) {
+		setData([]);
+		
+		log("Cleared " + data.length + " answers");
+	}
+}
+
+main();
