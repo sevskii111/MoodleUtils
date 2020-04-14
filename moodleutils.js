@@ -19,10 +19,10 @@ function main() {
 	createUpdater();
 	log("Loading MoodleUtils v" + configuration.version + "...");
 
-	if (document.location.pathname == "/moodle/mod/quiz/attempt.php") {
+	if (document.location.pathname == "/mod/quiz/attempt.php") {
 		addButton("Fill Answers", autoFill);
 		shouldLoad = true;
-	} else if (document.location.pathname == "/moodle/mod/quiz/review.php") {
+	} else if (document.location.pathname == "/mod/quiz/review.php") {
 		addButton("Record Answers", autoRecord);
 		shouldLoad = true;
 	}

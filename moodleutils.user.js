@@ -4,14 +4,14 @@
 // @version      0.4
 // @description  Provides a number of cheats for Moodle
 // @author       Willsr71
-// @updateURL    https://github.com/Willsr71/MoodleUtils/raw/master/moodleutils.user.js
-// @match        http://www.latintutorial.com/moodle/*
+// @updateURL    https://github.com/sevskii111/MoodleUtils/raw/master/moodleutils.user.js
+// @match        http://do.novsu.ru/*
 // @grant        localstorage
 // @run-at       document-body
 // ==/UserScript==
 
 var configuration = {
-	devMode: false,
+	devMode: true,
 	showPanel: true,
 	showConsole: true,
 	showButtons: true,
